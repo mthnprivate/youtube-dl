@@ -6,6 +6,9 @@ import itertools
 import operator
 import re
 
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+
 from .common import InfoExtractor
 from ..compat import (
     compat_HTTPError,
@@ -293,6 +296,23 @@ class PornHubIE(PornHubBaseIE):
             self._search_regex(
                 r'var\s+flashvars_\d+\s*=\s*({.+?});', webpage, 'flashvars', default='{}'),
             video_id)
+        
+        # Create a selenium Chrome webdriver that runs headless.
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        driver = webdriver.Chrome(chrome_options = chrome_options)
+
+        # Navigate to the video url.
+        driver.get(url)
+        
+        # Extract the definitions url from the media_0 variable.
+        definitions_url = driver.execute_script('return media_0')
+
+        # Navigate to the definitions url and extract the media definitions object.
+        driver.get(definitions_url)
+        page_source =  re.search(r'\[.*\]', driver.page_source, flags=0).group()
+        definitions = self._parse_json(page_source, video_id)
+
         if flashvars:
             subtitle_url = url_or_none(flashvars.get('closedCaptionsFile'))
             if subtitle_url:
@@ -303,11 +323,12 @@ class PornHubIE(PornHubBaseIE):
             thumbnail = flashvars.get('image_url')
             duration = int_or_none(flashvars.get('video_duration'))
             media_definitions = flashvars.get('mediaDefinitions')
-            if isinstance(media_definitions, list):
-                for definition in media_definitions:
+
+            if isinstance(definitions, list):
+                for definition in definitions:
                     if not isinstance(definition, dict):
                         continue
-                    video_url = definition.get('videoUrl')
+                    video_url = definition.get('videoUrl').replace('&amp;', '&')
                     if not video_url or not isinstance(video_url, compat_str):
                         continue
                     if video_url in video_urls_set:
